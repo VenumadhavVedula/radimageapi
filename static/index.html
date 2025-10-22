@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Simplirad X-Ray Analysis</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 1250px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .result-container {
+        display: flex;
+        gap: 20px;
+        margin-top: 20px;
+      }
+      .error {
+        color: red;
+      }
+      .loading {
+        display: none;
+        margin: 10px 0;
+      }
+      img {
+        max-width: 100%;
+        height: auto;
+      }
+      .result-container {
+        display: grid;
+        grid-template-columns: 500px 500px 1fr;
+        gap: 20px;
+        margin-top: 20px;
+        height: calc(100vh - 200px); /* Adjust based on header height */
+      }
+
+      .predictions {
+        flex: none;
+        padding: 15px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        background: #f8f9fa;
+        overflow-y: auto;
+        max-height: 100%;
+        font-size: 12px;
+      }
+
+      .predictions table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      .predictions td {
+        padding: 8px;
+        border-bottom: 1px solid #eee;
+      }
+
+      .predictions td:last-child {
+        text-align: right;
+        font-weight: bold;
+      }
+
+      .heatmap {
+        flex: none;
+        padding: 15px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        background: #f8f9fa;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+
+      .heatmap img {
+        max-width: 200px;
+        max-height: 200px;
+        object-fit: contain;
+      }
+
+      .report-container {
+        flex: 1;
+        padding: 20px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        background: #fff;
+        overflow-y: auto;
+        max-height: 100%;
+        line-height: 1.6;
+      }
+
+      /* Additional styles for better readability */
+      h3 {
+        margin-top: 0;
+        margin-bottom: 15px;
+        color: #2c3e50;
+      }
+
+      .predictions::-webkit-scrollbar,
+      .report-container::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .predictions::-webkit-scrollbar-thumb,
+      .report-container::-webkit-scrollbar-thumb {
+        background-color: #ccc;
+        border-radius: 4px;
+      }
+
+      .predictions::-webkit-scrollbar-track,
+      .report-container::-webkit-scrollbar-track {
+        background-color: #f1f1f1;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Simplirad™ X-Ray Image Analysis</h1>
+    <form id="uploadForm">
+      <input
+        type="file"
+        title="Only Dicom files supported in un-compressed format"
+        id="fileInput"
+        accept="*.dcm"
+        required
+      />
+      <button type="submit">Analyze Image</button>
+    </form>
+    <button id="generateReport" class="report-button" hidden>
+      Generate Report
+    </button>
+
+    <div id="loading" class="loading">Analyzing image...</div>
+    <div class="result-container">
+      <div id="result" class="predictions"></div>
+      <div id="heatmap" class="heatmap"></div>
+      <div id="reportContainer" class="report-container" style="display: none;"></div>
+    </div>
+
+    <script>
+      document
+        .getElementById("uploadForm")
+        .addEventListener("submit", async (e) => {
+          e.preventDefault();
+
+          const fileInput = document.getElementById("fileInput");
+          const loading = document.getElementById("loading");
+          const resultDiv = document.getElementById("result");
+          const heatmapDiv = document.getElementById("heatmap");
+          const reportContainer = document.getElementById("reportContainer");
+          reportContainer.innerHTML = "";
+          if (!fileInput.files[0]) {
+            resultDiv.innerHTML = '<p class="error">Please select a file</p>';
+            return;
+          }
+
+          const formData = new FormData();
+          formData.append("file", fileInput.files[0]);
+
+          try {
+            loading.style.display = "block";
+            resultDiv.innerHTML = "";
+            heatmapDiv.innerHTML = "";
+
+            const response = await fetch("https://radimageapi.simplirad.net/analyzedcm/", {
+              method: "POST",
+              body: formData,
+            });
+
+            const data = await response.json();
+
+            if (data.status === "success") {
+              // Display predictions
+              let resultsHtml = "<h3>Analysis Results:</h3>";
+              resultsHtml += "<table>";
+              const sortedPredictions = Object.entries(data.predictions)
+                .map(([condition, probability]) => ({
+                  condition,
+                  probability,
+                }))
+                .sort((a, b) => b.probability - a.probability);
+              sortedPredictions.forEach((element) => {
+                let style = "";
+                if (element.condition === "Fracture") {
+                  style = "color: gray;";
+                } else if (element.probability > 0.5) {
+                  style = "color: red;";
+                }
+                resultsHtml += `<tr style="${style}"><td>${
+                  element.condition
+                }</td><td>${(element.probability * 100).toFixed(2)}%</td></tr>`;
+              });
+              resultsHtml += "</table>";
+              resultDiv.innerHTML = resultsHtml;
+
+              // Display heatmap
+              heatmapDiv.innerHTML = `
+                <h3>Heatmap Visualization:</h3>
+                <img src="data:image/png;base64,${data.heatmap}" alt="Heatmap visualization">
+              `;
+              let filteredPredictions = sortedPredictions.filter(
+                (x) => x.probability > 0.5 && x.condition !== "Fracture"
+              );
+              //generateReport(filteredPredictions);
+            } else {
+              resultDiv.innerHTML = `<p class="error">Error: ${data.message}</p>`;
+            }
+          } catch (error) {
+            resultDiv.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+          } finally {
+            loading.style.display = "none";
+          }
+        });
+
+      document
+        .getElementById("generateReport")
+        .addEventListener("click", async () => {
+          generateReport();
+        });
+
+      const generateReport = async (sortedPredictions) => {
+        try {
+          const reportButton = document.getElementById("generateReport");
+          const reportContainer = document.getElementById("reportContainer");
+
+          reportButton.disabled = true;
+          reportContainer.innerHTML = "Generating report...";
+
+          let conditions = sortedPredictions.map((x) => x.condition).join(", ");
+
+          let spanish_question =
+            "Generar informe para radiografía de tórax con posibles condiciones en " +
+            conditions;
+
+          let english_question =
+            "Generate report for chest x-ray with possible conditions in " +
+            conditions;
+
+          let normal_report_question =
+            "Generate report for chest x-ray with normal findings";
+
+          let normal_report_spanish_question =
+            "Generar informe para radiografía de tórax con hallazgos normales";
+
+          let q =
+            sortedPredictions.length > 0
+              ? english_question
+              : normal_report_question;
+
+          const response = await fetch(
+            "http://localhost:3000/radiology/query",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              // Include the sorted predictions in the request body
+              body: JSON.stringify({
+                question: q,
+              }),
+            }
+          );
+
+          const data = await response.json();
+          // Modify the existing success handler to enable the report button
+          if (data.status === "success") {
+            // ...existing prediction display code...
+
+            // Enable the generate report button after successful analysis
+            document.getElementById("generateReport").disabled = false;
+          }
+          // Display the report content
+          reportContainer.innerHTML = data.answer.kwargs.content;
+        } catch (error) {
+          document.getElementById(
+            "reportContainer"
+          ).innerHTML = `<p class="error">Error generating report: ${error.message}</p>`;
+        } finally {
+          document.getElementById("generateReport").disabled = false;
+        }
+      };
+    </script>
+  </body>
+</html>
