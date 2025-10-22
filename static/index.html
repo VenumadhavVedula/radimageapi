@@ -161,7 +161,7 @@
             resultDiv.innerHTML = "";
             heatmapDiv.innerHTML = "";
 
-            const response = await fetch("https://radimageapi.simplirad.net/analyze/", {
+            const response = await fetch("https://radimageapi.simplirad.net/predictdcm/", {
               method: "POST",
               body: formData,
             });
